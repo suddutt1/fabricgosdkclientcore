@@ -1,0 +1,8 @@
+{
+    "workbench.colorTheme": "Red",
+    
+    "workbench.colorCustomizations": {
+       
+        "editorCursor.foreground":"#FFFF00"
+    }
+}
