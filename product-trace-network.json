@@ -1,0 +1,51 @@
+{
+    "description":"Product provenance and traceability sample network",
+    "fabricVersion":"1.1.0",
+    "orderers":{
+        "name" :"Orderer","mspID":"OrdererMSP","domain":"orderer.net","ordererHostname":"orderer","SANS":"localhost","type":"solo"
+    },
+    "addCA":"false",
+    "orgs":[
+        { 
+            "name" :"Manufacturer",
+            "domain":"manuf.net",
+            "mspID":"ManufacturerMSP",
+            "SANS":"localhost",
+            "peerCount":1,
+            "userCount":1
+        },
+        { 
+            "name" :"Distributer",
+            "domain":"distributer.net",
+            "mspID":"DistributerMSP",
+            "SANS":"localhost",
+            "peerCount":1,
+            "userCount":1
+        },
+        { 
+            "name" :"Retailer",
+            "domain":"retailer.com",
+            "mspID":"RetailerMSP",
+            "SANS":"localhost",
+            "peerCount":1,
+            "userCount":1
+        },
+        { 
+            "name" :"Consumer",
+            "domain":"consumerportal.net",
+            "mspID":"ConsumerMSP",
+            "SANS":"localhost",
+            "peerCount":1,
+            "userCount":1
+        }
+        ],
+    "consortium":"SupplyChainConsortium",
+    "channels" :[
+                    {"channelName":"prodtracking","orgs":["Manufacturer","Distributer","Retailer","Consumer"] },
+                    {"channelName":"settlement","orgs":["Manufacturer","Distributer","Retailer"] }
+                ],
+    "chaincodes":[{"channelName":"prodtracking","ccid":"prodtracer","version":"1.0","src":"github.com/prodtracer","participants":["Manufacturer","Distributer","Retailer","Consumer"]},
+        {"channelName":"settlement","ccid":"bsmgmt","version":"1.0","src":"github.com/bsmgmt","participants":["Manufacturer","Distributer","Retailer"]}
+]            
+                
+}

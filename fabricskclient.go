@@ -189,7 +189,7 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath strin
 
 //InstantiateCC instantiates a chaincode
 //As of now endorsement policy implemented is Any one of the participanting orgs
-func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version string, initArgs [][]byte, signingOrgs []string, wg *sync.WaitGroup) (bool, error) {
+func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version string, initArgs [][]byte, ccPolicy string, wg *sync.WaitGroup) (bool, error) {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -201,12 +201,15 @@ func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version str
 		_logger.Errorf("Failed to create new resource management client: %+v", err)
 		return false, err
 	}
-	ccPolicy := cauthdsl.SignedByAnyMember(signingOrgs)
-
+	policy, err := cauthdsl.FromString(ccPolicy)
+	if err != nil {
+		_logger.Errorf("Invalid chain code policy provided: %s error %+v", ccPolicy, err)
+		return false, err
+	}
 	// Org resource manager will instantiate 'example_cc' on channel
 	resp, err := orgResrcMgmtClient.InstantiateCC(
 		channelName,
-		resourceMgmnt.InstantiateCCRequest{Name: ccId, Path: ccPath, Version: version, Args: initArgs, Policy: ccPolicy})
+		resourceMgmnt.InstantiateCCRequest{Name: ccId, Path: ccPath, Version: version, Args: initArgs, Policy: policy})
 	if err != nil {
 		_logger.Errorf("Error in installation %+v", err)
 		return false, err
