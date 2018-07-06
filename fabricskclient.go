@@ -6,13 +6,17 @@ import (
 	"time"
 
 	channel "github.com/hyperledger/fabric-sdk-go/pkg/client/channel"
+	mspclient "github.com/hyperledger/fabric-sdk-go/pkg/client/msp"
 	resourceMgmnt "github.com/hyperledger/fabric-sdk-go/pkg/client/resmgmt"
+	"github.com/hyperledger/fabric-sdk-go/pkg/common/errors/retry"
 	context "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/context"
 	core "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/core"
 	sdkConfig "github.com/hyperledger/fabric-sdk-go/pkg/core/config"
 	packager "github.com/hyperledger/fabric-sdk-go/pkg/fab/ccpackager/gopackager"
 	fabsdk "github.com/hyperledger/fabric-sdk-go/pkg/fabsdk"
 	cauthdsl "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/common/cauthdsl"
+
+	msp "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/msp"
 	logging "github.com/op/go-logging"
 )
 
@@ -31,6 +35,7 @@ type FabricSDKClient struct {
 	configPath     string
 	configProvider core.ConfigProvider
 	clientOrg      string
+	orgOrderer     string
 }
 
 //Shutdown Shutdown the client
@@ -62,6 +67,16 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 		if isFound {
 			fsc.clientOrg, _ = orgNameConfig.(string)
 			_logger.Infof("Client organization found the in the configuration %s", fsc.clientOrg)
+		}
+		//Orderer url and name
+		orderersConfig, isFound := cnfBackend.Lookup("orderers")
+		if isFound {
+			orderersConfigMap, _ := orderersConfig.(map[string]interface{})
+			for key, _ := range orderersConfigMap {
+				_logger.Infof("Orderer configuration for orderer %s is being retrieved", key)
+				fsc.orgOrderer = key
+				break
+			}
 		}
 		//To load a channel clients user and channel namesa are. If the x-preloadedUsers list is
 		//set in the configuration then they are loaded in init, else it is loaded.
@@ -216,6 +231,67 @@ func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version str
 	}
 	_logger.Infof("Installation successful %+v", resp)
 	return true, nil
+}
+
+//SaveChannelInOrderer in Orderer. It sends the channelTx file to orderer
+func (fsc *FabricSDKClient) SaveChannelInOrderer(channelID, pathToTxFile string, wg *sync.WaitGroup) bool {
+	if wg != nil {
+		defer wg.Done()
+	}
+	//First I need to save the channel the join with the others
+	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg("ordererorg"))
+
+	// Org resource management client
+	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %+v", err)
+		return false
+	}
+	mspClient, err := mspclient.New(fsc.sdk.Context(), mspclient.WithOrg(fsc.clientOrg))
+	if err != nil {
+		_logger.Errorf("Error in creating  msp client for org %s %+v", fsc.clientOrg, err)
+		return false
+	}
+	adminIdentity, err := mspClient.GetSigningIdentity("Admin")
+	if err != nil {
+		_logger.Errorf("Error in retriving the singing identity of the admin of org %s %+v", fsc.clientOrg, err)
+		return false
+	}
+	_logger.Infof("Going to load tx file from %s", pathToTxFile)
+	req := resourceMgmnt.SaveChannelRequest{ChannelID: channelID,
+		ChannelConfigPath: pathToTxFile,
+		SigningIdentities: []msp.SigningIdentity{adminIdentity}}
+	saveChannelResp, err := orgResrcMgmtClient.SaveChannel(req, resourceMgmnt.WithRetry(retry.DefaultResMgmtOpts), resourceMgmnt.WithOrdererEndpoint(fsc.orgOrderer))
+	if err != nil {
+		_logger.Errorf("Error in savinf the channel for the org %s %+v", fsc.clientOrg, err)
+		return false
+	}
+	_logger.Infof("Channel save of org %s is successful with trxnId %+v", fsc.clientOrg, saveChannelResp)
+	return true
+}
+
+//JoinChannel should be called all the participanting peers of a given org. Should be called
+//for each of the client SDK instances
+func (fsc *FabricSDKClient) JoinChannel(channelID string, wg *sync.WaitGroup) bool {
+	if wg != nil {
+		defer wg.Done()
+	}
+	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg(fsc.clientOrg))
+
+	// Org resource management client
+	orgResMgmtClient, err := resourceMgmnt.New(adminContext)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %+v", err)
+		return false
+	}
+
+	// Org peers join channel
+	if err = orgResMgmtClient.JoinChannel(channelID, resourceMgmnt.WithRetry(retry.DefaultResMgmtOpts), resourceMgmnt.WithOrdererEndpoint(fsc.orgOrderer)); err != nil {
+		_logger.Errorf("Org peers failed to JoinChannel for org  %s %+v", fsc.clientOrg, err)
+		return false
+	}
+	_logger.Infof("Join channel with channelId %s for org %s is successful ", channelID, fsc.clientOrg)
+	return true
 }
 
 /*

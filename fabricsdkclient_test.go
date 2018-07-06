@@ -14,6 +14,28 @@ func Test_FabricSDKClient_Init(t *testing.T) {
 	defer cleanup(clientsMap)
 
 }
+func Test_ChannelCreation(t *testing.T) {
+	clientsMap := initializeClients(t)
+	defer cleanup(clientsMap)
+	channelID := "settlementchannel"
+	if !clientsMap["retail"].SaveChannelInOrderer(channelID, "/home/suddutt1/projects/producttracer/network/"+channelID+".tx", nil) {
+		t.Logf("Save channel could not completed successfully ")
+		t.FailNow()
+	}
+	if !clientsMap["retail"].JoinChannel(channelID, nil) {
+		t.Logf("Join  channel could not completed successfully for retail")
+		t.FailNow()
+	}
+	if !clientsMap["dist"].JoinChannel(channelID, nil) {
+		t.Logf("Join  channel could not completed successfully for dist")
+		t.FailNow()
+	}
+	if !clientsMap["manuf"].JoinChannel(channelID, nil) {
+		t.Logf("Join  channel could not completed successfully for manuf")
+		t.FailNow()
+	}
+
+}
 func Test_Install_InitiateChainCode(t *testing.T) {
 	clientsMap := initializeClients(t)
 	defer cleanup(clientsMap)
@@ -24,7 +46,7 @@ func Test_Install_InitiateChainCode(t *testing.T) {
 	ccPolicy := "And ('ManufacturerMSP.member','DistributerMSP.member','RetailerMSP.member')"
 	installInstantiate(clientsMap, "settlementchannel", ccPath, goPath, ccID, ccPolicy, t)
 }
-func Test_Invoke_Query_AndPolicy(t *testing.T) {
+func Test_InvokeTrxn_Query(t *testing.T) {
 	clientsMap := initializeClients(t)
 	defer cleanup(clientsMap)
 	ccPath := "github.com/suddutt1/basechaincode"
@@ -35,8 +57,8 @@ func Test_Invoke_Query_AndPolicy(t *testing.T) {
 	installInstantiate(clientsMap, channelName, ccPath, goPath, ccID, ccPolicy, t)
 	userID := "User1"
 	ccFn := "save"
-	key := fmt.Sprintf("KEY_%d", time.Now().Nanosecond)
-	value := fmt.Sprintf("VALUE%d", time.Now().Nanosecond)
+	key := fmt.Sprintf("KEY_%d", time.Now().Nanosecond())
+	value := fmt.Sprintf("VALUE%d", time.Now().Nanosecond())
 
 	invokeArgs := [][]byte{[]byte(key), []byte(value)}
 	peers := []string{"peer0.manuf.net", "peer0.distributer.net", "peer0.retailer.com"}
@@ -47,6 +69,17 @@ func Test_Invoke_Query_AndPolicy(t *testing.T) {
 	}
 	t.Logf("Result Invoke Trxn %s", string(rsltBytes))
 	//Need to query and verify
+	queryArgs := [][]byte{[]byte(key)}
+	ccFn = "retrieve"
+	queryRsltBytes, isSuccess, err := clientsMap["dist"].Query(channelName, userID, ccID, ccFn, queryArgs, peers, nil)
+	if !isSuccess || err != nil {
+		t.Logf("Error in Query Trxn %v", err)
+		t.FailNow()
+	}
+	t.Logf("Result Query Trxn %s", string(queryRsltBytes))
+	if value != string(queryRsltBytes) {
+		t.FailNow()
+	}
 
 }
 

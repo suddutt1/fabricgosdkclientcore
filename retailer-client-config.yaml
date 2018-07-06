@@ -230,7 +230,7 @@ peers:
     tlsCACerts:
       path: /home/suddutt1/projects/producttracer/network/crypto-config/peerOrganizations/retailer.com/tlsca/tlsca.retailer.com-cert.pem
 
-x-preloadedUsers:
-  - User1
+#x-preloadedUsers:
+#  - User1
   
 
