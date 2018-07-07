@@ -11,12 +11,13 @@ import (
 	"github.com/hyperledger/fabric-sdk-go/pkg/common/errors/retry"
 	context "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/context"
 	core "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/core"
+	"github.com/hyperledger/fabric-sdk-go/pkg/common/providers/fab"
+	msp "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/msp"
 	sdkConfig "github.com/hyperledger/fabric-sdk-go/pkg/core/config"
 	packager "github.com/hyperledger/fabric-sdk-go/pkg/fab/ccpackager/gopackager"
+	eventClient "github.com/hyperledger/fabric-sdk-go/pkg/fab/events/client"
 	fabsdk "github.com/hyperledger/fabric-sdk-go/pkg/fabsdk"
 	cauthdsl "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/common/cauthdsl"
-
-	msp "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/msp"
 	logging "github.com/op/go-logging"
 )
 
@@ -36,7 +37,18 @@ type FabricSDKClient struct {
 	configProvider core.ConfigProvider
 	clientOrg      string
 	orgOrderer     string
+	eventSubsReg   map[string]EventWaitGroup
 }
+
+//EventWaitGroup manages the event related wait groups
+type EventWaitGroup struct {
+	eventName    string
+	wg           *sync.WaitGroup
+	evtType      string
+	eventService fab.EventService
+	registration fab.Registration
+}
+type BlockEventListener func(<-chan *fab.BlockEvent, *sync.WaitGroup)
 
 //Shutdown Shutdown the client
 func (fsc *FabricSDKClient) Shutdown() {
@@ -61,6 +73,7 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 	fsc.channelContextProviderMap = make(map[string]context.ChannelProvider)
 	fsc.channelContextMap = make(map[string]context.Channel)
 	fsc.channelClientMap = make(map[string]*channel.Client)
+	fsc.eventSubsReg = make(map[string]EventWaitGroup)
 	configs, _ := fsc.configProvider()
 	for _, cnfBackend := range configs {
 		orgNameConfig, isFound := cnfBackend.Lookup("client.organization")
@@ -108,6 +121,12 @@ func (fsc *FabricSDKClient) setupChannelClient(channelName, user string) (*chann
 	_logger.Debugf("Processing channel %s for user %s", channelName, user)
 	key := fmt.Sprintf("%s_%s", channelName, user)
 	fsc.channelContextProviderMap[key] = fsc.sdk.ChannelContext(channelName, fabsdk.WithUser(user), fabsdk.WithOrg(fsc.clientOrg))
+	channelContext, err := fsc.channelContextProviderMap[key]()
+	if err != nil {
+		_logger.Errorf("Error in creating channel cotext %+v", err)
+		return nil, false
+	}
+	fsc.channelContextMap[key] = channelContext
 	channelClient, err := channel.New(fsc.channelContextProviderMap[key])
 	if err != nil {
 		_logger.Errorf("Error in creating channel client %+v", err)
@@ -294,32 +313,54 @@ func (fsc *FabricSDKClient) JoinChannel(channelID string, wg *sync.WaitGroup) bo
 	return true
 }
 
-/*
-func ListenBlockEvents(channelContext context.Channel, wg *sync.WaitGroup) {
-	defer wg.Done()
-	eventService, err := channelContext.ChannelService().EventService(eventClient.WithBlockEvents())
-	if err != nil {
-		fmt.Printf("Error getting event service: %s\n", err)
-		return
+//
+func (fsc *FabricSDKClient) addEventInRegistry(eventDetails EventWaitGroup) bool {
+	if _, isOk := fsc.eventSubsReg[eventDetails.eventName]; isOk {
+		_logger.Info("Event already registered %s", eventDetails.eventName)
+		return false
 	}
-	fmt.Println("Got the event service instance")
-	var blockEventChan <-chan *fab.BlockEvent
-	breg, blockEventChan, err := eventService.RegisterBlockEvent()
-	if err != nil {
-		fmt.Printf("Error registering for block events: %+v\n", err)
-	}
-	fmt.Println("Got the registering to Block Events")
-	defer eventService.Unregister(breg)
-	var subWg sync.WaitGroup
-
-	if blockEventChan != nil {
-		subWg.Add(1)
-		go CheckEvents(blockEventChan, &subWg)
-
-	}
-	fmt.Println("Waiting for the block events to happen")
-	subWg.Wait()
+	fsc.eventSubsReg[eventDetails.eventName] = eventDetails
+	return true
 }
+
+func (fsc *FabricSDKClient) RegisterForBlockEvents(channelID string, userID string, wg, wgListenr *sync.WaitGroup, eventLister BlockEventListener) bool {
+	if wg != nil {
+		defer wg.Done()
+	}
+	if _, isFound := fsc.getChannelClient(channelID, userID); isFound {
+		key := fmt.Sprintf("%s_%s", channelID, userID)
+		eventService, err := fsc.channelContextMap[key].ChannelService().EventService(eventClient.WithBlockEvents())
+		if err != nil {
+			_logger.Errorf("Error getting event service: %+v", err)
+			return false
+		}
+		var blockEventChan <-chan *fab.BlockEvent
+		evtRegistration, blockEventChan, err := eventService.RegisterBlockEvent()
+		if err != nil {
+			_logger.Errorf("Error registering for block events: %+v", err)
+			return false
+		}
+		eventName := fmt.Sprintf("%s_%s_BLOCKEVENT", channelID, userID)
+		evntWg := EventWaitGroup{eventName: eventName, eventService: eventService, evtType: "BLOCK", registration: evtRegistration, wg: wgListenr}
+		if !fsc.addEventInRegistry(evntWg) {
+			_logger.Errorf("Event already registered and running .. Unregister the other listener")
+			//Unregister right now
+			eventService.Unregister(evtRegistration)
+			return false
+		}
+		go eventLister(blockEventChan, wgListenr)
+		return true
+	}
+	return false
+
+}
+func (fsc *FabricSDKClient) DegisterBlockevent(channelID, userID string) {
+	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_BLOCKEVENT", channelID, userID)]; isFound {
+		evtWtGrp.Deregister()
+	}
+}
+
+/*
 func CheckEvents(eventChan <-chan *fab.BlockEvent, wg *sync.WaitGroup) {
 	defer wg.Done()
 	select {
@@ -343,4 +384,11 @@ func SleepFor(seconds time.Duration) {
 		fmt.Printf("timeout of %d seconds\n", seconds)
 	}
 	fmt.Println("Waiting ends")
+}
+
+func (ewg *EventWaitGroup) Deregister() {
+	ewg.eventService.Unregister(ewg.registration)
+	if ewg.wg != nil {
+		ewg.wg.Done()
+	}
 }

@@ -82,7 +82,46 @@ func Test_InvokeTrxn_Query(t *testing.T) {
 	}
 
 }
+func Test_InvokeTrxn_Query_Loop(t *testing.T) {
+	clientsMap := initializeClients(t)
+	defer cleanup(clientsMap)
+	ccPath := "github.com/suddutt1/basechaincode"
+	goPath := "/home/suddutt1/go"
+	ccID := fmt.Sprintf("Basic_%d", time.Now().UnixNano())
+	ccPolicy := "And ('ManufacturerMSP.member','DistributerMSP.member','RetailerMSP.member')"
+	channelName := "settlementchannel"
+	installInstantiate(clientsMap, channelName, ccPath, goPath, ccID, ccPolicy, t)
+	for {
+		userID := "User1"
+		ccFn := "save"
+		key := fmt.Sprintf("KEY_%d", time.Now().Nanosecond())
+		value := fmt.Sprintf("VALUE%d", time.Now().Nanosecond())
 
+		invokeArgs := [][]byte{[]byte(key), []byte(value)}
+		peers := []string{"peer0.manuf.net", "peer0.distributer.net", "peer0.retailer.com"}
+		rsltBytes, isSuccess, err := clientsMap["manuf"].InvokeTrxn(channelName, userID, ccID, ccFn, invokeArgs, peers, nil)
+		if !isSuccess || err != nil {
+			t.Logf("Error in Invoke Trxn %v", err)
+			t.FailNow()
+		}
+		t.Logf("Result Invoke Trxn %s", string(rsltBytes))
+		time.Sleep(15 * time.Second)
+		//Need to query and verify
+		queryArgs := [][]byte{[]byte(key)}
+		ccFn = "retrieve"
+		queryRsltBytes, isSuccess, err := clientsMap["dist"].Query(channelName, userID, ccID, ccFn, queryArgs, peers, nil)
+		if !isSuccess || err != nil {
+			t.Logf("Error in Query Trxn %v", err)
+			t.FailNow()
+		}
+		t.Logf("Result Query Trxn %s", string(queryRsltBytes))
+		if value != string(queryRsltBytes) {
+			t.FailNow()
+		}
+
+	}
+
+}
 func installInstantiate(clientsMap map[string]*hlfsdkutil.FabricSDKClient, channelName, ccPath, goPath, ccID, ccPolicy string, t *testing.T) {
 	initArgs := [][]byte{[]byte("init")}
 	ccVersion := "1.0"
@@ -136,5 +175,6 @@ func cleanup(clientMap map[string]*hlfsdkutil.FabricSDKClient) {
 	clientMap["retail"].Shutdown()
 	clientMap["dist"].Shutdown()
 	clientMap["manuf"].Shutdown()
+	fmt.Println("Cleanup completed")
 
 }
