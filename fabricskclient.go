@@ -49,6 +49,7 @@ type EventWaitGroup struct {
 	registration fab.Registration
 }
 type BlockEventListener func(<-chan *fab.BlockEvent, *sync.WaitGroup)
+type CCEventListener func(<-chan *fab.CCEvent, *sync.WaitGroup)
 
 //Shutdown Shutdown the client
 func (fsc *FabricSDKClient) Shutdown() {
@@ -354,8 +355,45 @@ func (fsc *FabricSDKClient) RegisterForBlockEvents(channelID string, userID stri
 	return false
 
 }
+func (fsc *FabricSDKClient) RegisterForCCEvent(channelID string, userID, ccID string, wg, wgListenr *sync.WaitGroup, eventLister CCEventListener) bool {
+	if wg != nil {
+		defer wg.Done()
+	}
+	if _, isFound := fsc.getChannelClient(channelID, userID); isFound {
+		key := fmt.Sprintf("%s_%s", channelID, userID)
+		eventService, err := fsc.channelContextMap[key].ChannelService().EventService(eventClient.WithBlockEvents())
+		if err != nil {
+			_logger.Errorf("Error getting event service: %+v", err)
+			return false
+		}
+		var ccEventChan <-chan *fab.CCEvent
+		evtRegistration, ccEventChan, err := eventService.RegisterChaincodeEvent(ccID, ".*")
+		if err != nil {
+			_logger.Errorf("Error registering for block events: %+v", err)
+			return false
+		}
+		eventName := fmt.Sprintf("%s_%s_%s_CCEVENT", channelID, userID, ccID)
+		evntWg := EventWaitGroup{eventName: eventName, eventService: eventService, evtType: "CCEVENT", registration: evtRegistration, wg: wgListenr}
+		if !fsc.addEventInRegistry(evntWg) {
+			_logger.Errorf("Event already registered and running .. Unregister the other listener")
+			//Unregister right now
+			eventService.Unregister(evtRegistration)
+			return false
+		}
+		go eventLister(ccEventChan, wgListenr)
+		return true
+	}
+	return false
+
+}
+
 func (fsc *FabricSDKClient) DegisterBlockevent(channelID, userID string) {
 	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_BLOCKEVENT", channelID, userID)]; isFound {
+		evtWtGrp.Deregister()
+	}
+}
+func (fsc *FabricSDKClient) DegisterCCevent(channelID, userID, ccID string) {
+	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_%s_CCEVENT", channelID, userID, ccID)]; isFound {
 		evtWtGrp.Deregister()
 	}
 }

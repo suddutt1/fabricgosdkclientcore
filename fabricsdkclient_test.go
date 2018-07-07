@@ -2,6 +2,9 @@ package fabricgosdkclientcore_test
 
 import (
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"testing"
 	"time"
 
@@ -88,10 +91,20 @@ func Test_InvokeTrxn_Query_Loop(t *testing.T) {
 	ccPath := "github.com/suddutt1/basechaincode"
 	goPath := "/home/suddutt1/go"
 	ccID := fmt.Sprintf("Basic_%d", time.Now().UnixNano())
+	fmt.Println("Chaincode id : ", ccID)
 	ccPolicy := "And ('ManufacturerMSP.member','DistributerMSP.member','RetailerMSP.member')"
 	channelName := "settlementchannel"
 	installInstantiate(clientsMap, channelName, ccPath, goPath, ccID, ccPolicy, t)
-	for {
+	osSigChan := make(chan os.Signal)
+	signal.Notify(osSigChan, os.Interrupt, syscall.SIGTERM)
+	notStopped := false
+	go func() {
+		<-osSigChan
+		fmt.Println("Ctrl-C detected..")
+		notStopped = true
+	}()
+	time.Sleep(60 * time.Second)
+	for !notStopped {
 		userID := "User1"
 		ccFn := "save"
 		key := fmt.Sprintf("KEY_%d", time.Now().Nanosecond())
