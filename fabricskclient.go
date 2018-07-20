@@ -193,7 +193,7 @@ func (fsc *FabricSDKClient) InvokeTrxn(channelName, user, ccID, ccfuncName strin
 //InstallChainCode Installs a chain code in the organization node.
 //For each organization it has to be called separately as the admin credentials will not be available
 //for a diffrent organization other this the client's organization
-func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath string, wg *sync.WaitGroup) bool {
+func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath, adminID string, wg *sync.WaitGroup) bool {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -202,7 +202,7 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath strin
 		_logger.Errorf("Packing error %+v\n", err)
 		return false
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(adminID), fabsdk.WithOrg(fsc.clientOrg))
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -396,6 +396,81 @@ func (fsc *FabricSDKClient) DegisterCCevent(channelID, userID, ccID string) {
 	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_%s_CCEVENT", channelID, userID, ccID)]; isFound {
 		evtWtGrp.Deregister()
 	}
+}
+
+//EnrollAsOrgAdmin reads the config and entrolls the registerer
+func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bool {
+	ctxProvider := fsc.sdk.Context()
+	mspClient, err := mspclient.New(ctxProvider)
+	if err != nil {
+		_logger.Errorf("Unable to create no-org MSPClient ")
+		return false
+	}
+	ctx, err := ctxProvider()
+	if err != nil {
+		_logger.Fatalf("Failed to get context: %+v", err)
+		return false
+	}
+
+	thisOrg := ctx.IdentityConfig().Client().Organization
+
+	caConfig, ok := ctx.IdentityConfig().CAConfig(thisOrg)
+	if !ok {
+		_logger.Fatal("CAConfig failed")
+		return false
+	}
+	err = mspClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
+	if err != nil {
+		_logger.Fatalf("Registerer Enroll failed: %+v", err)
+		return false
+	}
+
+	_logger.Info("Enrolled registerer")
+	idRespArray, err := mspClient.GetAllIdentities()
+	if err == nil {
+		for _, idDetails := range idRespArray {
+			_logger.Debugf("ID Details %+v", idDetails)
+		}
+	}
+	//TODO: Study this following orgs once again
+	userAttributes := []mspclient.Attribute{
+		{
+			Name:  "role1",
+			Value: fmt.Sprintf("%s:ecert", "123"),
+			ECert: true,
+		},
+		{
+			Name:  "role2",
+			Value: fmt.Sprintf("%s:ecert", "123"),
+			ECert: true,
+		},
+	}
+	// Register the new user
+
+	enrollmentSecret, err := mspClient.Register(&mspclient.RegistrationRequest{
+		Name:       uid,
+		Type:       "user",
+		Attributes: userAttributes,
+		// Affiliation is mandatory. "org1" and "org2" are hardcoded as CA defaults
+		// See https://github.com/hyperledger/fabric-ca/blob/release/cmd/fabric-ca-server/config.go
+		Affiliation: affiliationOrg,
+	})
+	if err != nil {
+		_logger.Fatalf("Registration failed: %s", err)
+	}
+
+	// Enroll the new user
+	err = mspClient.Enroll(uid, mspclient.WithSecret(enrollmentSecret))
+	if err != nil {
+		_logger.Fatalf("Enroll failed: %s", err)
+	}
+
+	// Get the new user's signing identity
+	_, err = mspClient.GetSigningIdentity(uid)
+	if err != nil {
+		_logger.Fatalf("GetSigningIdentity failed: %s", err)
+	}
+	return true
 }
 
 /*

@@ -138,17 +138,17 @@ func Test_InvokeTrxn_Query_Loop(t *testing.T) {
 func installInstantiate(clientsMap map[string]*hlfsdkutil.FabricSDKClient, channelName, ccPath, goPath, ccID, ccPolicy string, t *testing.T) {
 	initArgs := [][]byte{[]byte("init")}
 	ccVersion := "1.0"
-	isInstallSuccess := clientsMap["retail"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
+	isInstallSuccess := clientsMap["retail"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  retail")
 		t.FailNow()
 	}
-	isInstallSuccess = clientsMap["dist"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
+	isInstallSuccess = clientsMap["dist"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  dist")
 		t.FailNow()
 	}
-	isInstallSuccess = clientsMap["manuf"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
+	isInstallSuccess = clientsMap["manuf"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  manuf")
 		t.FailNow()
