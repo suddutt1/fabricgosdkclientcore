@@ -38,6 +38,8 @@ type FabricSDKClient struct {
 	clientOrg      string
 	orgOrderer     string
 	eventSubsReg   map[string]EventWaitGroup
+	orgAdmin       string
+	orgMSPClient   *mspclient.Client
 }
 
 //EventWaitGroup manages the event related wait groups
@@ -193,7 +195,7 @@ func (fsc *FabricSDKClient) InvokeTrxn(channelName, user, ccID, ccfuncName strin
 //InstallChainCode Installs a chain code in the organization node.
 //For each organization it has to be called separately as the admin credentials will not be available
 //for a diffrent organization other this the client's organization
-func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath, adminID string, wg *sync.WaitGroup) bool {
+func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath string, wg *sync.WaitGroup) bool {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -202,7 +204,7 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath, admi
 		_logger.Errorf("Packing error %+v\n", err)
 		return false
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser(adminID), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -228,7 +230,7 @@ func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version str
 	if wg != nil {
 		defer wg.Done()
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -272,7 +274,7 @@ func (fsc *FabricSDKClient) SaveChannelInOrderer(channelID, pathToTxFile string,
 		_logger.Errorf("Error in creating  msp client for org %s %+v", fsc.clientOrg, err)
 		return false
 	}
-	adminIdentity, err := mspClient.GetSigningIdentity("Admin")
+	adminIdentity, err := mspClient.GetSigningIdentity(fsc.orgAdmin)
 	if err != nil {
 		_logger.Errorf("Error in retriving the singing identity of the admin of org %s %+v", fsc.clientOrg, err)
 		return false
@@ -296,7 +298,7 @@ func (fsc *FabricSDKClient) JoinChannel(channelID string, wg *sync.WaitGroup) bo
 	if wg != nil {
 		defer wg.Done()
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
 
 	// Org resource management client
 	orgResMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -398,35 +400,10 @@ func (fsc *FabricSDKClient) DegisterCCevent(channelID, userID, ccID string) {
 	}
 }
 
-//EnrollAsOrgAdmin reads the config and entrolls the registerer
+//EnrollOrgUser reads the config and entrolls the registerer
 func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bool {
-	ctxProvider := fsc.sdk.Context()
-	mspClient, err := mspclient.New(ctxProvider)
-	if err != nil {
-		_logger.Errorf("Unable to create no-org MSPClient ")
-		return false
-	}
-	ctx, err := ctxProvider()
-	if err != nil {
-		_logger.Fatalf("Failed to get context: %+v", err)
-		return false
-	}
 
-	thisOrg := ctx.IdentityConfig().Client().Organization
-
-	caConfig, ok := ctx.IdentityConfig().CAConfig(thisOrg)
-	if !ok {
-		_logger.Fatal("CAConfig failed")
-		return false
-	}
-	err = mspClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
-	if err != nil {
-		_logger.Fatalf("Registerer Enroll failed: %+v", err)
-		return false
-	}
-
-	_logger.Info("Enrolled registerer")
-	idRespArray, err := mspClient.GetAllIdentities()
+	idRespArray, err := fsc.orgMSPClient.GetAllIdentities()
 	if err == nil {
 		for _, idDetails := range idRespArray {
 			_logger.Debugf("ID Details %+v", idDetails)
@@ -447,7 +424,7 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 	}
 	// Register the new user
 
-	enrollmentSecret, err := mspClient.Register(&mspclient.RegistrationRequest{
+	enrollmentSecret, err := fsc.orgMSPClient.Register(&mspclient.RegistrationRequest{
 		Name:       uid,
 		Type:       "user",
 		Attributes: userAttributes,
@@ -460,17 +437,65 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 	}
 
 	// Enroll the new user
-	err = mspClient.Enroll(uid, mspclient.WithSecret(enrollmentSecret))
+	err = fsc.orgMSPClient.Enroll(uid, mspclient.WithSecret(enrollmentSecret))
 	if err != nil {
 		_logger.Fatalf("Enroll failed: %s", err)
 	}
 
 	// Get the new user's signing identity
-	_, err = mspClient.GetSigningIdentity(uid)
+	_, err = fsc.orgMSPClient.GetSigningIdentity(uid)
 	if err != nil {
 		_logger.Fatalf("GetSigningIdentity failed: %s", err)
 	}
 	return true
+}
+
+//ErollOrgAdmin will enroll the organization admin.
+//if readFromConfig is true then it will be read from sdk config registerer
+//entry. Else the userID given is used with the assumption that is it already pregenerated
+func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) bool {
+	ctxProvider := fsc.sdk.Context()
+	mspClient, err := mspclient.New(ctxProvider)
+	fsc.orgMSPClient = mspClient
+	if !readFromConfig {
+		_, err = fsc.orgMSPClient.GetSigningIdentity(adminUID)
+		if err != nil {
+			_logger.Fatalf("GetSigningIdentity failed: %s", err)
+			return false
+		}
+
+		fsc.orgAdmin = adminUID
+		_logger.Info("Enrolled registerer ", fsc.orgAdmin)
+		return true
+	}
+
+	if err != nil {
+		_logger.Errorf("Unable to create no-org MSPClient ")
+		return false
+	}
+
+	ctx, err := ctxProvider()
+	if err != nil {
+		_logger.Fatalf("Failed to get context: %+v", err)
+		return false
+	}
+
+	thisOrg := ctx.IdentityConfig().Client().Organization
+
+	caConfig, ok := ctx.IdentityConfig().CAConfig(thisOrg)
+	if !ok {
+		_logger.Fatal("CAConfig failed")
+		return false
+	}
+	err = mspClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
+	if err != nil {
+		_logger.Fatalf("Registerer Enroll failed: %+v", err)
+		return false
+	}
+	_logger.Info("Enrolled registerer ", fsc.orgAdmin)
+	fsc.orgAdmin = caConfig.Registrar.EnrollID
+	return true
+
 }
 
 /*

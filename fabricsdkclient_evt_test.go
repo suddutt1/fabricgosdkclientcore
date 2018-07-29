@@ -15,7 +15,7 @@ func Test_Block_EventListener(t *testing.T) {
 	osSigChan := make(chan os.Signal)
 	signal.Notify(osSigChan, os.Interrupt, syscall.SIGTERM)
 
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -33,7 +33,7 @@ func Test_CC_EventListener(t *testing.T) {
 	osSigChan := make(chan os.Signal)
 	signal.Notify(osSigChan, os.Interrupt, syscall.SIGTERM)
 
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 	var wg sync.WaitGroup
 	wg.Add(1)

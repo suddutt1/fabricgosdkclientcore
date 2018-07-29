@@ -13,12 +13,12 @@ import (
 
 func Test_FabricSDKClient_Init(t *testing.T) {
 
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 
 }
 func Test_ChannelCreation(t *testing.T) {
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 	channelID := "settlementchannel"
 	if !clientsMap["retail"].SaveChannelInOrderer(channelID, "/home/suddutt1/projects/producttracer/network/"+channelID+".tx", nil) {
@@ -40,7 +40,7 @@ func Test_ChannelCreation(t *testing.T) {
 
 }
 func Test_Install_InitiateChainCode(t *testing.T) {
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "User1")
 	defer cleanup(clientsMap)
 	//First install chain code
 	ccPath := "github.com/suddutt1/basechaincode"
@@ -50,7 +50,7 @@ func Test_Install_InitiateChainCode(t *testing.T) {
 	installInstantiate(clientsMap, "settlementchannel", ccPath, goPath, ccID, ccPolicy, t)
 }
 func Test_InvokeTrxn_Query(t *testing.T) {
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 	ccPath := "github.com/suddutt1/basechaincode"
 	goPath := "/home/suddutt1/go"
@@ -86,7 +86,7 @@ func Test_InvokeTrxn_Query(t *testing.T) {
 
 }
 func Test_InvokeTrxn_Query_Loop(t *testing.T) {
-	clientsMap := initializeClients(t)
+	clientsMap := initializeClients(t, "Admin")
 	defer cleanup(clientsMap)
 	ccPath := "github.com/suddutt1/basechaincode"
 	goPath := "/home/suddutt1/go"
@@ -138,17 +138,17 @@ func Test_InvokeTrxn_Query_Loop(t *testing.T) {
 func installInstantiate(clientsMap map[string]*hlfsdkutil.FabricSDKClient, channelName, ccPath, goPath, ccID, ccPolicy string, t *testing.T) {
 	initArgs := [][]byte{[]byte("init")}
 	ccVersion := "1.0"
-	isInstallSuccess := clientsMap["retail"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
+	isInstallSuccess := clientsMap["retail"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  retail")
 		t.FailNow()
 	}
-	isInstallSuccess = clientsMap["dist"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
+	isInstallSuccess = clientsMap["dist"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  dist")
 		t.FailNow()
 	}
-	isInstallSuccess = clientsMap["manuf"].InstallChainCode(ccID, ccVersion, goPath, ccPath, "Admin", nil)
+	isInstallSuccess = clientsMap["manuf"].InstallChainCode(ccID, ccVersion, goPath, ccPath, nil)
 	if !isInstallSuccess {
 		t.Logf("Error in CC installation for  manuf")
 		t.FailNow()
@@ -159,24 +159,28 @@ func installInstantiate(clientsMap map[string]*hlfsdkutil.FabricSDKClient, chann
 		t.Logf("Error in CC instantiation for  manuf")
 		t.FailNow()
 	}
+	t.Logf("%s %s Instantiation successful", ccID, ccVersion)
 }
-func initializeClients(t *testing.T) map[string]*hlfsdkutil.FabricSDKClient {
+func initializeClients(t *testing.T, adminUID string) map[string]*hlfsdkutil.FabricSDKClient {
 	fabricNetworkClientManuf := new(hlfsdkutil.FabricSDKClient)
 	rslt := fabricNetworkClientManuf.Init("./manuf-client-config.yaml")
 	if !rslt {
 		t.Logf("Error in sdk initialization manufacturer")
 		t.FailNow()
 	}
+	fabricNetworkClientManuf.ErollOrgAdmin(false, adminUID)
 	fabricNetworkClientRetail := new(hlfsdkutil.FabricSDKClient)
 	if !fabricNetworkClientRetail.Init("./retailer-client-config.yaml") {
 		t.Logf("Error in sdk initialization retailer")
 		t.FailNow()
 	}
+	fabricNetworkClientRetail.ErollOrgAdmin(false, adminUID)
 	fabricNetworkClientDist := new(hlfsdkutil.FabricSDKClient)
 	if !fabricNetworkClientDist.Init("./dist-client-config.yaml") {
 		t.Logf("Error in sdk initialization distributer")
 		t.FailNow()
 	}
+	fabricNetworkClientDist.ErollOrgAdmin(false, adminUID)
 	clientsMap := make(map[string]*hlfsdkutil.FabricSDKClient)
 	clientsMap["retail"] = fabricNetworkClientRetail
 	clientsMap["dist"] = fabricNetworkClientDist
