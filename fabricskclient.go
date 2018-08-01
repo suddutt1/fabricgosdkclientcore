@@ -39,6 +39,7 @@ type FabricSDKClient struct {
 	orgOrderer     string
 	eventSubsReg   map[string]EventWaitGroup
 	orgAdmin       string
+	orgAdminSecret string
 	orgMSPClient   *mspclient.Client
 }
 
@@ -204,7 +205,10 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath strin
 		_logger.Errorf("Packing error %+v\n", err)
 		return false
 	}
+	//si, _ := fsc.orgMSPClient.GetSigningIdentity(fsc.orgAdmin)
+
 	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
+	//adminContext := fsc.sdk.Context(fabsdk.WithIdentity(si), fabsdk.WithOrg(fsc.clientOrg))
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -252,6 +256,36 @@ func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version str
 		return false, err
 	}
 	_logger.Infof("Installation successful %+v", resp)
+	return true, nil
+}
+
+//UpdateCC upgrades a chain code
+func (fsc *FabricSDKClient) UpdateCC(channelName, ccID, ccPath, version string, initArgs [][]byte, ccPolicy string, wg *sync.WaitGroup) (bool, error) {
+	if wg != nil {
+		defer wg.Done()
+	}
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
+
+	// Org resource management client
+	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %+v", err)
+		return false, err
+	}
+	policy, err := cauthdsl.FromString(ccPolicy)
+	if err != nil {
+		_logger.Errorf("Invalid chain code policy provided: %s error %+v", ccPolicy, err)
+		return false, err
+	}
+	// Org resource manager will upgrade
+	resp, err := orgResrcMgmtClient.UpgradeCC(
+		channelName,
+		resourceMgmnt.UpgradeCCRequest{Name: ccID, Path: ccPath, Version: version, Args: initArgs, Policy: policy})
+	if err != nil {
+		_logger.Errorf("Error in upgrade %+v", err)
+		return false, err
+	}
+	_logger.Infof("Installation upgrade %+v", resp)
 	return true, nil
 }
 
@@ -326,6 +360,7 @@ func (fsc *FabricSDKClient) addEventInRegistry(eventDetails EventWaitGroup) bool
 	return true
 }
 
+//RegisterForBlockEvents register for block events
 func (fsc *FabricSDKClient) RegisterForBlockEvents(channelID string, userID string, wg, wgListenr *sync.WaitGroup, eventLister BlockEventListener) bool {
 	if wg != nil {
 		defer wg.Done()
@@ -357,6 +392,8 @@ func (fsc *FabricSDKClient) RegisterForBlockEvents(channelID string, userID stri
 	return false
 
 }
+
+//RegisterForCCEvent register for chain code event
 func (fsc *FabricSDKClient) RegisterForCCEvent(channelID string, userID, ccID string, wg, wgListenr *sync.WaitGroup, eventLister CCEventListener) bool {
 	if wg != nil {
 		defer wg.Done()
@@ -389,11 +426,14 @@ func (fsc *FabricSDKClient) RegisterForCCEvent(channelID string, userID, ccID st
 
 }
 
+//DegisterBlockevent dergisters a block event from the channel
 func (fsc *FabricSDKClient) DegisterBlockevent(channelID, userID string) {
 	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_BLOCKEVENT", channelID, userID)]; isFound {
 		evtWtGrp.Deregister()
 	}
 }
+
+//DegisterCCevent deregister chain code event
 func (fsc *FabricSDKClient) DegisterCCevent(channelID, userID, ccID string) {
 	if evtWtGrp, isFound := fsc.eventSubsReg[fmt.Sprintf("%s_%s_%s_CCEVENT", channelID, userID, ccID)]; isFound {
 		evtWtGrp.Deregister()
@@ -403,11 +443,11 @@ func (fsc *FabricSDKClient) DegisterCCevent(channelID, userID, ccID string) {
 //EnrollOrgUser reads the config and entrolls the registerer
 func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bool {
 
-	idRespArray, err := fsc.orgMSPClient.GetAllIdentities()
+	//First try to retrive the user
+	err := fsc.orgMSPClient.Enroll(uid, mspclient.WithSecret(secret))
 	if err == nil {
-		for _, idDetails := range idRespArray {
-			_logger.Debugf("ID Details %+v", idDetails)
-		}
+		_logger.Infof("User enrolled already : %s", uid)
+		return true
 	}
 	//TODO: Study this following orgs once again
 	userAttributes := []mspclient.Attribute{
@@ -422,22 +462,23 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 			ECert: true,
 		},
 	}
+	//If user enrollment error then
 	// Register the new user
 
-	enrollmentSecret, err := fsc.orgMSPClient.Register(&mspclient.RegistrationRequest{
-		Name:       uid,
-		Type:       "user",
-		Attributes: userAttributes,
-		// Affiliation is mandatory. "org1" and "org2" are hardcoded as CA defaults
-		// See https://github.com/hyperledger/fabric-ca/blob/release/cmd/fabric-ca-server/config.go
-		Affiliation: affiliationOrg,
+	_, err = fsc.orgMSPClient.Register(&mspclient.RegistrationRequest{
+		Name:           uid,
+		Type:           "user",
+		Attributes:     userAttributes,
+		Affiliation:    affiliationOrg,
+		MaxEnrollments: -1,
+		Secret:         secret,
 	})
 	if err != nil {
 		_logger.Fatalf("Registration failed: %s", err)
 	}
 
 	// Enroll the new user
-	err = fsc.orgMSPClient.Enroll(uid, mspclient.WithSecret(enrollmentSecret))
+	err = fsc.orgMSPClient.Enroll(uid, mspclient.WithSecret(secret))
 	if err != nil {
 		_logger.Fatalf("Enroll failed: %s", err)
 	}
@@ -492,8 +533,12 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 		_logger.Fatalf("Registerer Enroll failed: %+v", err)
 		return false
 	}
-	_logger.Info("Enrolled registerer ", fsc.orgAdmin)
 	fsc.orgAdmin = caConfig.Registrar.EnrollID
+	fsc.orgAdminSecret = caConfig.Registrar.EnrollSecret
+	_logger.Info("Enrolled registerer ", fsc.orgAdmin)
+	si, _ := fsc.orgMSPClient.GetSigningIdentity(fsc.orgAdmin)
+	fmt.Printf("\nAdmin cert\n%s", string(si.EnrollmentCertificate()))
+
 	return true
 
 }
