@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -27,7 +28,7 @@ func NewIBPClient(configJSON []byte) *IBPClient {
 }
 
 //Getcertificates returns all the admin certificates
-func (ibpc *IBPClient) Getcertificates(peerID string) {
+func (ibpc *IBPClient) Getcertificates(peerID string) []byte {
 	postBodyTemplate := `
 	{
 		"peer_names": [
@@ -38,7 +39,10 @@ func (ibpc *IBPClient) Getcertificates(peerID string) {
 	postBody := strings.Replace(postBodyTemplate, "{peerID}", peerID, -1)
 	url := ibpc.constructURL("/networks/{networkID}/certificates/fetch")
 
-	ibpc.postRequest(url, postBody)
+	if isOk, response := ibpc.postRequest(url, postBody); isOk {
+		return response
+	}
+	return nil
 }
 func (ibpc *IBPClient) AddAdminCerts(orgMSPID, certName, peerID, certPath string) {
 
@@ -63,7 +67,7 @@ func (ibpc *IBPClient) constructURL(api string) string {
 
 }
 
-func (ibpc *IBPClient) postRequest(url, json string) bool {
+func (ibpc *IBPClient) postRequest(url, json string) (bool, []byte) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -83,19 +87,64 @@ func (ibpc *IBPClient) postRequest(url, json string) bool {
 	resp, err := client.Do(postReq)
 	if err != nil {
 		fmt.Printf("Error in response %v\n", err)
-		return false
+		return false, nil
 	}
 
 	responseString, _ := ioutil.ReadAll(resp.Body)
-	fmt.Printf("Status : %s , Response : %s\n", resp.Status, responseString)
-	if resp.StatusCode == 200 {
-		return true
+	if isVerbose() {
+		fmt.Printf("Status : %s , Response : \n%s", resp.Status, responseString)
 	}
-	return false
+	if resp.StatusCode == 200 {
+		return true, responseString
+	}
+	return false, nil
 }
 func (ibpc *IBPClient) getAuthHeaderValue() string {
 	auth := ibpc.Key + ":" + ibpc.Secret
 	encodedStr := base64.StdEncoding.EncodeToString([]byte(auth))
 	authHeaderValue := fmt.Sprintf("Basic %s", encodedStr)
 	return authHeaderValue
+}
+
+//GeneratyeCertKeyEntry prints the cert key value entry
+func (ibpc *IBPClient) GenerateCertKeyEntry(certPath, privKeyPath string) {
+	certBytes, _ := ioutil.ReadFile(certPath)
+	keyBytes, _ := ioutil.ReadFile(privKeyPath)
+	output := make(map[string]string)
+	output["cert"] = string(certBytes)
+	output["key"] = string(keyBytes)
+	finalOutput, _ := json.MarshalIndent(output, "", " ")
+	fmt.Println(string(finalOutput))
+}
+
+func isVerbose() bool {
+	if len(os.Getenv("VERBOSE")) > 0 && strings.EqualFold(os.Getenv("VERBOSE"), "TRUE") {
+		return true
+	}
+	return false
+}
+
+//SetVerbose set the verbose output option to true or false
+func SetVerbose(flag bool) {
+	if flag {
+		os.Setenv("VERBOSE", "true")
+	} else {
+		os.Unsetenv("VERBOSE")
+	}
+}
+
+//PrettyPrintJSON pretty prints the input bytes if it is a json string
+func PrettyPrintJSON(input []byte) []byte {
+	var genericObject interface{}
+	err := json.Unmarshal(input, &genericObject)
+	if err != nil {
+		fmt.Println("Can not pretty print")
+		return nil
+	}
+	output, err := json.MarshalIndent(genericObject, "", "  ")
+	if err != nil {
+		fmt.Println("Can not pretty print")
+		return nil
+	}
+	return output
 }

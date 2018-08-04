@@ -9,6 +9,7 @@ import (
 	mspclient "github.com/hyperledger/fabric-sdk-go/pkg/client/msp"
 	resourceMgmnt "github.com/hyperledger/fabric-sdk-go/pkg/client/resmgmt"
 	"github.com/hyperledger/fabric-sdk-go/pkg/common/errors/retry"
+
 	context "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/context"
 	core "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/core"
 	"github.com/hyperledger/fabric-sdk-go/pkg/common/providers/fab"
@@ -41,6 +42,8 @@ type FabricSDKClient struct {
 	orgAdmin       string
 	orgAdminSecret string
 	orgMSPClient   *mspclient.Client
+	remoteAdminID  string
+	isRemoteAdmin  bool
 }
 
 //EventWaitGroup manages the event related wait groups
@@ -79,6 +82,7 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 	fsc.channelClientMap = make(map[string]*channel.Client)
 	fsc.eventSubsReg = make(map[string]EventWaitGroup)
 	configs, _ := fsc.configProvider()
+
 	for _, cnfBackend := range configs {
 		orgNameConfig, isFound := cnfBackend.Lookup("client.organization")
 		if isFound {
@@ -89,7 +93,7 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 		orderersConfig, isFound := cnfBackend.Lookup("orderers")
 		if isFound {
 			orderersConfigMap, _ := orderersConfig.(map[string]interface{})
-			for key, _ := range orderersConfigMap {
+			for key := range orderersConfigMap {
 				_logger.Infof("Orderer configuration for orderer %s is being retrieved", key)
 				fsc.orgOrderer = key
 				break
@@ -104,7 +108,7 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 				user, _ := userid.(string)
 				if conf, isOk := cnfBackend.Lookup("channels"); isOk {
 					channelDetailsMap, _ := conf.(map[string]interface{})
-					for channelName, _ := range channelDetailsMap {
+					for channelName := range channelDetailsMap {
 						if _, isSetup := fsc.setupChannelClient(channelName, user); !isSetup {
 							_logger.Errorf("Error in loading channels with given users")
 							return false
@@ -113,6 +117,12 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 
 				}
 			}
+		}
+		if adminCert, loadAdminCert := cnfBackend.Lookup("x-remote-admin"); loadAdminCert {
+			_logger.Infof("Loading pre generated admin cert")
+			remoteAdmin, _ := adminCert.(string)
+			fsc.remoteAdminID = remoteAdmin
+			fsc.isRemoteAdmin = true
 		}
 
 	}
@@ -205,10 +215,10 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath strin
 		_logger.Errorf("Packing error %+v\n", err)
 		return false
 	}
+
 	//si, _ := fsc.orgMSPClient.GetSigningIdentity(fsc.orgAdmin)
 
-	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
-	//adminContext := fsc.sdk.Context(fabsdk.WithIdentity(si), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.getAdminContext()
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -230,11 +240,11 @@ func (fsc *FabricSDKClient) InstallChainCode(ccID, version, goPath, ccPath strin
 
 //InstantiateCC instantiates a chaincode
 //As of now endorsement policy implemented is Any one of the participanting orgs
-func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version string, initArgs [][]byte, ccPolicy string, wg *sync.WaitGroup) (bool, error) {
+func (fsc *FabricSDKClient) InstantiateCC(channelName, ccID, ccPath, version string, initArgs [][]byte, ccPolicy string, wg *sync.WaitGroup) (bool, error) {
 	if wg != nil {
 		defer wg.Done()
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.getAdminContext()
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -250,7 +260,7 @@ func (fsc *FabricSDKClient) InstantiateCC(channelName, ccId, ccPath, version str
 	// Org resource manager will instantiate 'example_cc' on channel
 	resp, err := orgResrcMgmtClient.InstantiateCC(
 		channelName,
-		resourceMgmnt.InstantiateCCRequest{Name: ccId, Path: ccPath, Version: version, Args: initArgs, Policy: policy})
+		resourceMgmnt.InstantiateCCRequest{Name: ccID, Path: ccPath, Version: version, Args: initArgs, Policy: policy})
 	if err != nil {
 		_logger.Errorf("Error in installation %+v", err)
 		return false, err
@@ -349,8 +359,14 @@ func (fsc *FabricSDKClient) JoinChannel(channelID string, wg *sync.WaitGroup) bo
 	_logger.Infof("Join channel with channelId %s for org %s is successful ", channelID, fsc.clientOrg)
 	return true
 }
-
-//
+func (fsc *FabricSDKClient) getAdminContext() context.ClientProvider {
+	adminID := fsc.orgAdmin
+	if fsc.isRemoteAdmin {
+		adminID = fsc.remoteAdminID
+	}
+	adminContext := fsc.sdk.Context(fabsdk.WithUser(adminID), fabsdk.WithOrg(fsc.clientOrg))
+	return adminContext
+}
 func (fsc *FabricSDKClient) addEventInRegistry(eventDetails EventWaitGroup) bool {
 	if _, isOk := fsc.eventSubsReg[eventDetails.eventName]; isOk {
 		_logger.Info("Event already registered %s", eventDetails.eventName)
@@ -520,14 +536,13 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 		_logger.Fatalf("Failed to get context: %+v", err)
 		return false
 	}
-
 	thisOrg := ctx.IdentityConfig().Client().Organization
-
 	caConfig, ok := ctx.IdentityConfig().CAConfig(thisOrg)
 	if !ok {
 		_logger.Fatal("CAConfig failed")
 		return false
 	}
+
 	err = mspClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
 	if err != nil {
 		_logger.Fatalf("Registerer Enroll failed: %+v", err)
@@ -536,11 +551,17 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 	fsc.orgAdmin = caConfig.Registrar.EnrollID
 	fsc.orgAdminSecret = caConfig.Registrar.EnrollSecret
 	_logger.Info("Enrolled registerer ", fsc.orgAdmin)
-	si, _ := fsc.orgMSPClient.GetSigningIdentity(fsc.orgAdmin)
-	fmt.Printf("\nAdmin cert\n%s", string(si.EnrollmentCertificate()))
 
 	return true
 
+}
+
+//Deregister  de-registers evnt wait group
+func (ewg *EventWaitGroup) Deregister() {
+	ewg.eventService.Unregister(ewg.registration)
+	if ewg.wg != nil {
+		ewg.wg.Done()
+	}
 }
 
 /*
@@ -560,6 +581,7 @@ func CheckEvents(eventChan <-chan *fab.BlockEvent, wg *sync.WaitGroup) {
 }
 */
 
+//SleepFor util method ... Consider removing
 func SleepFor(seconds time.Duration) {
 	fmt.Println("Started waiting ....")
 	select {
@@ -567,11 +589,4 @@ func SleepFor(seconds time.Duration) {
 		fmt.Printf("timeout of %d seconds\n", seconds)
 	}
 	fmt.Println("Waiting ends")
-}
-
-func (ewg *EventWaitGroup) Deregister() {
-	ewg.eventService.Unregister(ewg.registration)
-	if ewg.wg != nil {
-		ewg.wg.Done()
-	}
 }

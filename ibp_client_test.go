@@ -26,16 +26,16 @@ func Test_InstallCC(t *testing.T) {
 	version := fmt.Sprintf("%d", time.Now().UnixNano())
 	ccPath := "github.com/suddutt1/chaincode"
 	goPath := "/home/ibmdev/go"
-	ccPolicy := "And ('org1.member' )"
+	//ccPolicy := "And ('org1.member' )"
 	ccID := fmt.Sprintf("CC_%s", version)
 	rslt := sdkClient.InstallChainCode(ccID, "1.0", goPath, ccPath, nil)
 	if !rslt {
 		t.Logf("Chaincode installation failure ")
 	}
-	rslt, err := sdkClient.InstantiateCC("defaultchannel", ccID, ccPath, "1.0", [][]byte{[]byte("init")}, ccPolicy, nil)
+	/*rslt, err := sdkClient.InstantiateCC("defaultchannel", ccID, ccPath, "1.0", [][]byte{[]byte("init")}, ccPolicy, nil)
 	if err != nil || !rslt {
 		t.Logf("Instantiation failed")
-	}
+	}*/
 
 }
 func Test_InstallAndUpgradeCC(t *testing.T) {
@@ -73,7 +73,7 @@ func initializeIBPClient(t *testing.T, adminUID string) *hlfsdkutil.FabricSDKCli
 		t.Logf("Error in sdk initialization")
 		t.FailNow()
 	}
-	if !fabricSDKClient.ErollOrgAdmin(false, adminUID) {
+	if !fabricSDKClient.ErollOrgAdmin(true, adminUID) {
 		t.Logf("Error in enrolling admin %s", adminUID)
 	}
 	return fabricSDKClient

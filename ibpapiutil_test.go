@@ -2,13 +2,11 @@ package fabricgosdkclientcore_test
 
 import (
 	"testing"
-	"time"
 
 	ibputil "github.com/suddutt1/fabricgosdkclientcore"
 )
 
-func Test_IBPClient(t *testing.T) {
-	config := `
+const _IBP_CONFIG = `
 	{
 		"url": "https://ibmblockchain-staging-starter.stage1.ng.bluemix.net",
 		"network_id": "n406ad74aa3da4f4bbcc6f2bbbf90194a",
@@ -17,8 +15,21 @@ func Test_IBPClient(t *testing.T) {
 	} 
 
 	`
-	ibpClient := ibputil.NewIBPClient([]byte(config))
+
+func Test_IBPClient(t *testing.T) {
+
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
 	ibpClient.AddAdminCerts("org1", "org1admin1-cert", "org1-peer1", "./tmp/state-store/admin@org1-cert.pem")
-	time.Sleep(10 * time.Second)
-	ibpClient.Getcertificates("org1-peer1")
+
+}
+func Test_GetIBPAdminCerts(t *testing.T) {
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
+	if resp := ibpClient.Getcertificates("org1-peer1"); resp != nil {
+		t.Logf("\n%s\n", ibputil.PrettyPrintJSON(resp))
+	}
+}
+
+func Test_GenerateCertKeyEntry(t *testing.T) {
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
+	ibpClient.GenerateCertKeyEntry("./tmp/state-store/admin@org1-cert.pem", "./tmp/msp/keystore/e932bded77486552ac36d743322c38eb6ae5ff77a3db473cad060c4fcbe3349a_sk")
 }
