@@ -122,9 +122,13 @@ func (ibpc *IBPClient) getAuthHeaderValue() string {
 func (ibpc *IBPClient) GenerateCertKeyEntry(certPath, privKeyPath string) {
 	certBytes, _ := ioutil.ReadFile(certPath)
 	keyBytes, _ := ioutil.ReadFile(privKeyPath)
-	output := make(map[string]string)
-	output["cert"] = string(certBytes)
-	output["key"] = string(keyBytes)
+	output := make(map[string]interface{})
+	pemCert := make(map[string]string)
+	pemCert["pem"] = string(certBytes)
+	output["cert"] = pemCert
+	pemKey := make(map[string]interface{})
+	pemKey["pem"] = string(keyBytes)
+	output["key"] = pemKey
 	finalOutput, _ := json.MarshalIndent(output, "", " ")
 	fmt.Println(string(finalOutput))
 }

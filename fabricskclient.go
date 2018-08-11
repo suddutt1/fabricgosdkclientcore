@@ -83,6 +83,13 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 	fsc.channelClientMap = make(map[string]*channel.Client)
 	fsc.eventSubsReg = make(map[string]EventWaitGroup)
 	configs, _ := fsc.configProvider()
+	ctxProvider := fsc.sdk.Context()
+	mspClient, err := mspclient.New(ctxProvider)
+	if err != nil {
+		_logger.Errorf("Unable to create no-org MSPClient ")
+		return false
+	}
+	fsc.orgMSPClient = mspClient
 
 	for _, cnfBackend := range configs {
 		orgNameConfig, isFound := cnfBackend.Lookup("client.organization")
@@ -275,7 +282,7 @@ func (fsc *FabricSDKClient) UpdateCC(channelName, ccID, ccPath, version string, 
 	if wg != nil {
 		defer wg.Done()
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.getAdminContext()
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -306,7 +313,7 @@ func (fsc *FabricSDKClient) SaveChannelInOrderer(channelID, pathToTxFile string,
 		defer wg.Done()
 	}
 	//First I need to save the channel the join with the others
-	adminContext := fsc.sdk.Context(fabsdk.WithUser("Admin"), fabsdk.WithOrg("ordererorg"))
+	adminContext := fsc.getAdminContext()
 
 	// Org resource management client
 	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -343,7 +350,7 @@ func (fsc *FabricSDKClient) JoinChannel(channelID string, wg *sync.WaitGroup) bo
 	if wg != nil {
 		defer wg.Done()
 	}
-	adminContext := fsc.sdk.Context(fabsdk.WithUser(fsc.orgAdmin), fabsdk.WithOrg(fsc.clientOrg))
+	adminContext := fsc.getAdminContext()
 
 	// Org resource management client
 	orgResMgmtClient, err := resourceMgmnt.New(adminContext)
@@ -364,7 +371,7 @@ func (fsc *FabricSDKClient) getAdminContext() context.ClientProvider {
 	adminID := fsc.orgAdmin
 	if fsc.isRemoteAdmin {
 		adminID = fsc.remoteAdminID
-		fmt.Println("Remote admin")
+		_logger.Infof("Using remote admin %s", adminID)
 	}
 	_, err := fsc.orgMSPClient.GetSigningIdentity(adminID)
 	if err != nil {
@@ -518,15 +525,9 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 //if readFromConfig is true then it will be read from sdk config registerer
 //entry. Else the userID given is used with the assumption that is it already pregenerated
 func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) bool {
-	ctxProvider := fsc.sdk.Context()
-	mspClient, err := mspclient.New(ctxProvider)
-	if err != nil {
-		_logger.Errorf("Unable to create no-org MSPClient ")
-		return false
-	}
-	fsc.orgMSPClient = mspClient
+
 	if !readFromConfig {
-		_, err = fsc.orgMSPClient.GetSigningIdentity(adminUID)
+		_, err := fsc.orgMSPClient.GetSigningIdentity(adminUID)
 		if err != nil {
 			_logger.Fatalf("GetSigningIdentity failed: %s", err)
 			return false
@@ -536,7 +537,7 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 		_logger.Info("Enrolled registerer ", fsc.orgAdmin)
 		return true
 	}
-
+	ctxProvider := fsc.sdk.Context()
 	ctx, err := ctxProvider()
 	if err != nil {
 		_logger.Fatalf("Failed to get context: %+v", err)
@@ -549,7 +550,7 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 		return false
 	}
 
-	err = mspClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
+	err = fsc.orgMSPClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
 	if err != nil {
 		_logger.Fatalf("Registerer Enroll failed: %+v", err)
 		return false

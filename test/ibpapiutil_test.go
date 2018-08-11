@@ -31,7 +31,7 @@ func Test_GetIBPAdminCerts(t *testing.T) {
 
 func Test_GenerateCertKeyEntry(t *testing.T) {
 	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
-	ibpClient.GenerateCertKeyEntry("./tmp/state-store/admin@org1-cert.pem", "./tmp/msp/keystore/e932bded77486552ac36d743322c38eb6ae5ff77a3db473cad060c4fcbe3349a_sk")
+	ibpClient.GenerateCertKeyEntry("./tmp/state-store/suddutt6@org1-cert.pem", "./tmp/msp/keystore/0de283c12fd24a28414580aa806ff11054bcd8da601182d4aff0573774a13f9a_sk")
 }
 func Test_StopPeer(t *testing.T) {
 	ibputil.SetVerbose(true)
