@@ -72,6 +72,12 @@ func (ibpc *IBPClient) StartPeer(peerID string) {
 	url := ibpc.constructURL("/networks/{networkID}/nodes/" + peerID + "/start")
 	ibpc.postRequest(url, "{}")
 }
+
+//SyncChannel syncs the channel certificates
+func (ibpc *IBPClient) SyncChannel(channelID string) {
+	url := ibpc.constructURL("/networks/{networkID}/channels/" + channelID + "/sync")
+	ibpc.postRequest(url, "{}")
+}
 func (ibpc *IBPClient) constructURL(api string) string {
 	actualAPI := strings.Replace(api, "{networkID}", ibpc.NetworkID, 1)
 	finalURL := fmt.Sprintf("%s/api/v1%s", ibpc.URL, actualAPI)

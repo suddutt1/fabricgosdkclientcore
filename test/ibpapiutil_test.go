@@ -43,3 +43,8 @@ func Test_StartPeer(t *testing.T) {
 	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
 	ibpClient.StartPeer("org1-peer1")
 }
+func Test_SyncChannel(t *testing.T) {
+	ibputil.SetVerbose(true)
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
+	ibpClient.SyncChannel("defaultchannel")
+}
