@@ -60,6 +60,18 @@ func (ibpc *IBPClient) AddAdminCerts(orgMSPID, certName, peerID, certPath string
 	ibpc.postRequest(url, string(postBodyBytes))
 
 }
+
+//StopPeer stops a peer
+func (ibpc *IBPClient) StopPeer(peerID string) {
+	url := ibpc.constructURL("/networks/{networkID}/nodes/" + peerID + "/stop")
+	ibpc.postRequest(url, "{}")
+}
+
+//StartPeer starts the peer
+func (ibpc *IBPClient) StartPeer(peerID string) {
+	url := ibpc.constructURL("/networks/{networkID}/nodes/" + peerID + "/start")
+	ibpc.postRequest(url, "{}")
+}
 func (ibpc *IBPClient) constructURL(api string) string {
 	actualAPI := strings.Replace(api, "{networkID}", ibpc.NetworkID, 1)
 	finalURL := fmt.Sprintf("%s/api/v1%s", ibpc.URL, actualAPI)
@@ -92,7 +104,7 @@ func (ibpc *IBPClient) postRequest(url, json string) (bool, []byte) {
 
 	responseString, _ := ioutil.ReadAll(resp.Body)
 	if isVerbose() {
-		fmt.Printf("Status : %s , Response : \n%s", resp.Status, responseString)
+		fmt.Printf("Status : %s , Response : \n%s\n", resp.Status, responseString)
 	}
 	if resp.StatusCode == 200 {
 		return true, responseString

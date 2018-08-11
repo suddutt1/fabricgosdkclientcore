@@ -64,7 +64,7 @@
 			   }
 			},
 			"x-uploadedSignedCerts": [],
-			"cryptoPath":"./tmp/users/{username}/msp"
+			"cryptoPath":"./tmp/msp/users/{username}"
 		}
 	},
 	"orderers": {
@@ -134,5 +134,5 @@
 		}
 	},
 	"x-type": "hlfv1",
-	"x-remote-admin":"remote_admin"
+	"x-remote-admin":"suddutt6"
 }

@@ -67,6 +67,7 @@ func (fsc *FabricSDKClient) Init(configPath string) bool {
 	var err error
 	fsc.configPath = configPath
 	fsc.configProvider = sdkConfig.FromFile(fsc.configPath)
+	//confBankEnds, _ := fsc.configProvider()
 	fsc.sdk, err = fabsdk.New(fsc.configProvider)
 	if err != nil {
 		_logger.Errorf("Error in initialization of SDK %+v", err)
@@ -363,6 +364,12 @@ func (fsc *FabricSDKClient) getAdminContext() context.ClientProvider {
 	adminID := fsc.orgAdmin
 	if fsc.isRemoteAdmin {
 		adminID = fsc.remoteAdminID
+		fmt.Println("Remote admin")
+	}
+	_, err := fsc.orgMSPClient.GetSigningIdentity(adminID)
+	if err != nil {
+		_logger.Fatalf("GetSigningIdentity failed: %s", err)
+		return nil
 	}
 	adminContext := fsc.sdk.Context(fabsdk.WithUser(adminID), fabsdk.WithOrg(fsc.clientOrg))
 	return adminContext
@@ -513,6 +520,10 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) bool {
 	ctxProvider := fsc.sdk.Context()
 	mspClient, err := mspclient.New(ctxProvider)
+	if err != nil {
+		_logger.Errorf("Unable to create no-org MSPClient ")
+		return false
+	}
 	fsc.orgMSPClient = mspClient
 	if !readFromConfig {
 		_, err = fsc.orgMSPClient.GetSigningIdentity(adminUID)
@@ -524,11 +535,6 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 		fsc.orgAdmin = adminUID
 		_logger.Info("Enrolled registerer ", fsc.orgAdmin)
 		return true
-	}
-
-	if err != nil {
-		_logger.Errorf("Unable to create no-org MSPClient ")
-		return false
 	}
 
 	ctx, err := ctxProvider()

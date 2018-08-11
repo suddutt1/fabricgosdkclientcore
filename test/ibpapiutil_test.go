@@ -16,10 +16,10 @@ const _IBP_CONFIG = `
 
 	`
 
-func Test_IBPClient(t *testing.T) {
+func Test_IBPAddAdminCert(t *testing.T) {
 
 	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
-	ibpClient.AddAdminCerts("org1", "org1admin1-cert", "org1-peer1", "./tmp/state-store/admin@org1-cert.pem")
+	ibpClient.AddAdminCerts("org1", "org1remote-admin-cert", "org1-peer1", "./tmp/state-store/suddutt6@org1-cert.pem")
 
 }
 func Test_GetIBPAdminCerts(t *testing.T) {
@@ -32,4 +32,14 @@ func Test_GetIBPAdminCerts(t *testing.T) {
 func Test_GenerateCertKeyEntry(t *testing.T) {
 	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
 	ibpClient.GenerateCertKeyEntry("./tmp/state-store/admin@org1-cert.pem", "./tmp/msp/keystore/e932bded77486552ac36d743322c38eb6ae5ff77a3db473cad060c4fcbe3349a_sk")
+}
+func Test_StopPeer(t *testing.T) {
+	ibputil.SetVerbose(true)
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
+	ibpClient.StopPeer("org1-peer1")
+}
+func Test_StartPeer(t *testing.T) {
+	ibputil.SetVerbose(true)
+	ibpClient := ibputil.NewIBPClient([]byte(_IBP_CONFIG))
+	ibpClient.StartPeer("org1-peer1")
 }
