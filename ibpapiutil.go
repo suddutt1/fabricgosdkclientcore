@@ -44,6 +44,8 @@ func (ibpc *IBPClient) Getcertificates(peerID string) []byte {
 	}
 	return nil
 }
+
+//AddAdminCerts adds a new admin certificate in IBP
 func (ibpc *IBPClient) AddAdminCerts(orgMSPID, certName, peerID, certPath string) {
 
 	certBytes, _ := ioutil.ReadFile(certPath)
