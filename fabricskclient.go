@@ -64,6 +64,7 @@ func (fsc *FabricSDKClient) Shutdown() {
 
 //Init initializes the FabricSDK Client and its structure
 func (fsc *FabricSDKClient) Init(configPath string) bool {
+	logging.SetLevel(logging.DEBUG, "fabric-sdk-client")
 	var err error
 	fsc.configPath = configPath
 	fsc.configProvider = sdkConfig.FromFile(fsc.configPath)
