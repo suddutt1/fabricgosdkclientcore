@@ -522,10 +522,10 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 	return true
 }
 
-//ErollOrgAdmin will enroll the organization admin.
+//EnrollOrgAdmin will enroll the organization admin.
 //if readFromConfig is true then it will be read from sdk config registerer
 //entry. Else the userID given is used with the assumption that is it already pregenerated
-func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) bool {
+func (fsc *FabricSDKClient) EnrollOrgAdmin(readFromConfig bool, adminUID string) bool {
 
 	if !readFromConfig {
 		_, err := fsc.orgMSPClient.GetSigningIdentity(adminUID)
@@ -562,6 +562,28 @@ func (fsc *FabricSDKClient) ErollOrgAdmin(readFromConfig bool, adminUID string) 
 
 	return true
 
+}
+
+//GetChainCodeVersion returns the version of an installed chaincode
+func (fsc *FabricSDKClient) GetChainCodeVersion(channel, ccID string) *string {
+	adminContext := fsc.getAdminContext()
+	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %+v", err)
+		return nil
+	}
+	rslt, err := orgResrcMgmtClient.QueryInstantiatedChaincodes(channel)
+	if err != nil {
+		_logger.Errorf("Unable to query installed chanin codes in channel %s : %+v", channel, err)
+		return nil
+	}
+	for _, chaincode := range rslt.Chaincodes {
+		if chaincode.Name == ccID {
+			version := chaincode.GetVersion()
+			return &version
+		}
+	}
+	return nil
 }
 
 //Deregister  de-registers evnt wait group
