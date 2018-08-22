@@ -586,6 +586,40 @@ func (fsc *FabricSDKClient) GetChainCodeVersion(channel, ccID string) *string {
 	return nil
 }
 
+//GetChainCodeState returns the state of the chain code
+func (fsc *FabricSDKClient) GetChainCodeState(channel, ccID string) (bool, string, string) {
+	adminContext := fsc.getAdminContext()
+	orgResrcMgmtClient, err := resourceMgmnt.New(adminContext)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %+v", err)
+		return false, "", ""
+	}
+	rslt, err := orgResrcMgmtClient.QueryInstantiatedChaincodes(channel)
+	if err != nil {
+		_logger.Errorf("Unable to query installed chanin codes in channel %s : %+v", channel, err)
+		return false, "", ""
+	}
+	for _, chaincode := range rslt.Chaincodes {
+		if chaincode.Name == ccID {
+			version := chaincode.GetVersion()
+			return true, "INSTANTIATED", version
+		}
+	}
+	rslt, err = orgResrcMgmtClient.QueryInstalledChaincodes()
+	if err != nil {
+		_logger.Errorf("Unable to query installed chanin codes in channel %s : %+v", channel, err)
+		return false, "", ""
+	}
+	for _, chaincode := range rslt.Chaincodes {
+		if chaincode.Name == ccID {
+			version := chaincode.GetVersion()
+			return true, "INSTALLED", version
+		}
+	}
+	return true, "", ""
+
+}
+
 //Deregister  de-registers evnt wait group
 func (ewg *EventWaitGroup) Deregister() {
 	ewg.eventService.Unregister(ewg.registration)
