@@ -120,7 +120,7 @@ func initializeIBPClient(t *testing.T, adminUID string, isNewEnrollment bool) *h
 		t.Logf("Error in sdk initialization")
 		t.FailNow()
 	}
-	if !fabricSDKClient.ErollOrgAdmin(isNewEnrollment, adminUID) {
+	if !fabricSDKClient.EnrollOrgAdmin(isNewEnrollment, adminUID) {
 		t.Logf("Error in enrolling admin %s", adminUID)
 	}
 	return fabricSDKClient

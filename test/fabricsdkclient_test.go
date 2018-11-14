@@ -168,19 +168,19 @@ func initializeClients(t *testing.T, adminUID string) map[string]*hlfsdkutil.Fab
 		t.Logf("Error in sdk initialization manufacturer")
 		t.FailNow()
 	}
-	fabricNetworkClientManuf.ErollOrgAdmin(false, adminUID)
+	fabricNetworkClientManuf.EnrollOrgAdmin(false, adminUID)
 	fabricNetworkClientRetail := new(hlfsdkutil.FabricSDKClient)
 	if !fabricNetworkClientRetail.Init("./retailer-client-config.yaml") {
 		t.Logf("Error in sdk initialization retailer")
 		t.FailNow()
 	}
-	fabricNetworkClientRetail.ErollOrgAdmin(false, adminUID)
+	fabricNetworkClientRetail.EnrollOrgAdmin(false, adminUID)
 	fabricNetworkClientDist := new(hlfsdkutil.FabricSDKClient)
 	if !fabricNetworkClientDist.Init("./dist-client-config.yaml") {
 		t.Logf("Error in sdk initialization distributer")
 		t.FailNow()
 	}
-	fabricNetworkClientDist.ErollOrgAdmin(false, adminUID)
+	fabricNetworkClientDist.EnrollOrgAdmin(false, adminUID)
 	clientsMap := make(map[string]*hlfsdkutil.FabricSDKClient)
 	clientsMap["retail"] = fabricNetworkClientRetail
 	clientsMap["dist"] = fabricNetworkClientDist

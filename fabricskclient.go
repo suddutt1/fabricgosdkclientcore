@@ -9,7 +9,9 @@ import (
 	mspclient "github.com/hyperledger/fabric-sdk-go/pkg/client/msp"
 	resourceMgmnt "github.com/hyperledger/fabric-sdk-go/pkg/client/resmgmt"
 	"github.com/hyperledger/fabric-sdk-go/pkg/common/errors/retry"
+	commonpb "github.com/hyperledger/fabric-sdk-go/third_party/github.com/hyperledger/fabric/protos/common"
 
+	ledger "github.com/hyperledger/fabric-sdk-go/pkg/client/ledger"
 	context "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/context"
 	core "github.com/hyperledger/fabric-sdk-go/pkg/common/providers/core"
 	"github.com/hyperledger/fabric-sdk-go/pkg/common/providers/fab"
@@ -55,6 +57,7 @@ type EventWaitGroup struct {
 	registration fab.Registration
 }
 type BlockEventListener func(<-chan *fab.BlockEvent, *sync.WaitGroup)
+type BlockWithTrxnEventListener func(<-chan *fab.FilteredBlockEvent, *sync.WaitGroup)
 type CCEventListener func(<-chan *fab.CCEvent, *sync.WaitGroup)
 
 //Shutdown Shutdown the client
@@ -424,6 +427,39 @@ func (fsc *FabricSDKClient) RegisterForBlockEvents(channelID string, userID stri
 
 }
 
+//RegisterForFilteredBlockEvents registered details block events for a channel
+func (fsc *FabricSDKClient) RegisterForFilteredBlockEvents(channelID string, userID string, wg, wgListenr *sync.WaitGroup, eventLister BlockWithTrxnEventListener) bool {
+	if wg != nil {
+		defer wg.Done()
+	}
+	if _, isFound := fsc.getChannelClient(channelID, userID); isFound {
+		key := fmt.Sprintf("%s_%s", channelID, userID)
+		eventService, err := fsc.channelContextMap[key].ChannelService().EventService(eventClient.WithBlockEvents())
+		if err != nil {
+			_logger.Errorf("Error getting event service: %+v", err)
+			return false
+		}
+		var blockEventChan <-chan *fab.FilteredBlockEvent
+		evtRegistration, blockEventChan, err := eventService.RegisterFilteredBlockEvent()
+		if err != nil {
+			_logger.Errorf("Error registering for block events: %+v", err)
+			return false
+		}
+		eventName := fmt.Sprintf("%s_%s_BLOCKEVENT", channelID, userID)
+		evntWg := EventWaitGroup{eventName: eventName, eventService: eventService, evtType: "BLOCK", registration: evtRegistration, wg: wgListenr}
+		if !fsc.addEventInRegistry(evntWg) {
+			_logger.Errorf("Event already registered and running .. Unregister the other listener")
+			//Unregister right now
+			eventService.Unregister(evtRegistration)
+			return false
+		}
+		go eventLister(blockEventChan, wgListenr)
+		return true
+	}
+	return false
+
+}
+
 //RegisterForCCEvent register for chain code event
 func (fsc *FabricSDKClient) RegisterForCCEvent(channelID string, userID, ccID string, wg, wgListenr *sync.WaitGroup, eventLister CCEventListener) bool {
 	if wg != nil {
@@ -618,6 +654,24 @@ func (fsc *FabricSDKClient) GetChainCodeState(channel, ccID string) (bool, strin
 	}
 	return true, "", ""
 
+}
+
+//GetBlockdetails returns the details of a block
+func (fsc *FabricSDKClient) GetBlockdetails(channel string, blockNumber uint64) *commonpb.Block {
+	key := fmt.Sprintf("%s_%s", channel, fsc.orgAdmin)
+	channelContxt := fsc.channelContextProviderMap[key]
+
+	ledgerClient, err := ledger.New(channelContxt)
+	if err != nil {
+		_logger.Errorf("Failed to create new resource management client: %s +%v", channel, err)
+		return nil
+	}
+	blockDetails, err := ledgerClient.QueryBlock(blockNumber)
+	if err != nil {
+		_logger.Errorf("Error in retriving the block %+v", err)
+		return nil
+	}
+	return blockDetails
 }
 
 //Deregister  de-registers evnt wait group
