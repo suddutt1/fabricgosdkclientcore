@@ -24,7 +24,9 @@ import (
 	logging "github.com/op/go-logging"
 )
 
-var _logger = logging.MustGetLogger("fabric-sdk-client")
+const LOGGER_MODULE_NAME = "FABRIC_CLIENT_CORE_LOGGER"
+
+var _logger = logging.MustGetLogger(LOGGER_MODULE_NAME)
 
 //FabricSDKClient defines an easy to use wrapper to access a fabric blockchain environment.
 //Each client is dedicated for a given organization. All the accesses are specific to a given
@@ -67,7 +69,7 @@ func (fsc *FabricSDKClient) Shutdown() {
 
 //Init initializes the FabricSDK Client and its structure
 func (fsc *FabricSDKClient) Init(configPath string) bool {
-	logging.SetLevel(logging.DEBUG, "fabric-sdk-client")
+	//logging.SetLevel(logging.DEBUG, "fabric-sdk-client")
 	var err error
 	fsc.configPath = configPath
 	fsc.configProvider = sdkConfig.FromFile(fsc.configPath)
