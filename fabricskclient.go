@@ -660,6 +660,8 @@ func (fsc *FabricSDKClient) GetChainCodeState(channel, ccID string) (bool, strin
 
 //GetBlockdetails returns the details of a block
 func (fsc *FabricSDKClient) GetBlockdetails(channel string, blockNumber uint64) *commonpb.Block {
+	//To ensure that channel client is available
+	fsc.getChannelClient(channel, fsc.orgAdmin)
 	key := fmt.Sprintf("%s_%s", channel, fsc.orgAdmin)
 	channelContxt := fsc.channelContextProviderMap[key]
 
