@@ -543,19 +543,22 @@ func (fsc *FabricSDKClient) EnrollOrgUser(uid, secret, affiliationOrg string) bo
 		Secret:         secret,
 	})
 	if err != nil {
-		_logger.Fatalf("Registration failed: %s", err)
+		_logger.Criticalf("Registration failed: %s", err)
+		return false
 	}
 
 	// Enroll the new user
 	err = fsc.orgMSPClient.Enroll(uid, mspclient.WithSecret(secret))
 	if err != nil {
-		_logger.Fatalf("Enroll failed: %s", err)
+		_logger.Criticalf("Enroll failed: %s", err)
+		return false
 	}
 
 	// Get the new user's signing identity
 	_, err = fsc.orgMSPClient.GetSigningIdentity(uid)
 	if err != nil {
-		_logger.Fatalf("GetSigningIdentity failed: %s", err)
+		_logger.Criticalf("GetSigningIdentity failed: %s", err)
+		return false
 	}
 	return true
 }
@@ -568,7 +571,7 @@ func (fsc *FabricSDKClient) EnrollOrgAdmin(readFromConfig bool, adminUID string)
 	if !readFromConfig {
 		_, err := fsc.orgMSPClient.GetSigningIdentity(adminUID)
 		if err != nil {
-			_logger.Fatalf("GetSigningIdentity failed: %s", err)
+			_logger.Criticalf("GetSigningIdentity failed: %s", err)
 			return false
 		}
 
@@ -579,19 +582,19 @@ func (fsc *FabricSDKClient) EnrollOrgAdmin(readFromConfig bool, adminUID string)
 	ctxProvider := fsc.sdk.Context()
 	ctx, err := ctxProvider()
 	if err != nil {
-		_logger.Fatalf("Failed to get context: %+v", err)
+		_logger.Criticalf("Failed to get context: %+v", err)
 		return false
 	}
 	thisOrg := ctx.IdentityConfig().Client().Organization
 	caConfig, ok := ctx.IdentityConfig().CAConfig(thisOrg)
 	if !ok {
-		_logger.Fatal("CAConfig failed")
+		_logger.Criticalf("CAConfig failed")
 		return false
 	}
 
 	err = fsc.orgMSPClient.Enroll(caConfig.Registrar.EnrollID, mspclient.WithSecret(caConfig.Registrar.EnrollSecret))
 	if err != nil {
-		_logger.Fatalf("Registerer Enroll failed: %+v", err)
+		_logger.Criticalf("Registerer Enroll failed: %+v", err)
 		return false
 	}
 	fsc.orgAdmin = caConfig.Registrar.EnrollID
